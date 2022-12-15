@@ -162,9 +162,7 @@ function addStringToOutput(string) {
             });
         }
 
-        const info = document.createElement('p');
-        info.textContent = `Done in ${queriesCount} requests`;
-        output.append(info);
+        addStringToOutput(`Done in ${queriesCount} requests`);
 
         unblockForm();
     });
