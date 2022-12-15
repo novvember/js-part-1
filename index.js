@@ -25,10 +25,95 @@ const countriesList = document.getElementById('countriesList');
 const submit = document.getElementById('submit');
 const output = document.getElementById('output');
 
-(async () => {
+async function getBorders(code) {
+    const data = await getData(`https://restcountries.com/v3.1/alpha/${code}?fields=borders`);
+    return data.borders;
+}
+
+async function getBordersForAll(...codes) {
+    return Promise.all(codes.map(getBorders));
+}
+
+async function calculateRoute(fromCode, toCode) {
+    let queriesCount = 0;
+    const visitedCountries = new Set([fromCode]);
+    let routes = [[fromCode]];
+    let isDone = false;
+
+    while (!isDone && routes.length) {
+        const codes = routes.map((route) => route[route.length - 1]);
+        codes.forEach((code) => visitedCountries.add(code));
+        queriesCount += codes.length;
+
+        let bordersArray;
+
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            bordersArray = await getBordersForAll(...codes);
+        } catch {
+            return {
+                hasError: true,
+                queriesCount,
+                routes: [],
+            };
+        }
+
+        const newRoutes = [];
+
+        for (let i = 0; i < routes.length; i++) {
+            const route = routes[i];
+            const borders = bordersArray[i].filter((border) => !visitedCountries.has(border));
+
+            if (borders.includes(toCode)) {
+                isDone = true;
+            }
+
+            borders.forEach((border) => {
+                newRoutes.push([...route, border]);
+            });
+        }
+
+        routes = newRoutes;
+    }
+
+    routes = routes.filter((route) => route[route.length - 1] === toCode);
+
+    return {
+        hasError: false,
+        queriesCount,
+        routes,
+    };
+}
+
+function getCodeByCountryName(name, countriesData) {
+    for (const code in countriesData) {
+        if (countriesData[code].name.common === name) {
+            return code;
+        }
+    }
+    return null;
+}
+
+function blockForm() {
     fromCountry.disabled = true;
     toCountry.disabled = true;
     submit.disabled = true;
+}
+
+function unblockForm() {
+    fromCountry.disabled = false;
+    toCountry.disabled = false;
+    submit.disabled = false;
+}
+
+function addStringToOutput(string) {
+    const info = document.createElement('p');
+    info.textContent = string;
+    output.append(info);
+}
+
+(async () => {
+    blockForm();
 
     output.textContent = 'Loading…';
     const countriesData = await loadCountriesData();
@@ -43,14 +128,44 @@ const output = document.getElementById('output');
             countriesList.appendChild(option);
         });
 
-    fromCountry.disabled = false;
-    toCountry.disabled = false;
-    submit.disabled = false;
+    unblockForm();
 
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        // TODO: Вывести, откуда и куда едем, и что идёт расчёт.
-        // TODO: Рассчитать маршрут из одной страны в другую за минимум запросов.
-        // TODO: Вывести маршрут и общее количество запросов.
+
+        const fromName = fromCountry.value;
+        const toName = toCountry.value;
+
+        if (!fromName || !toName || fromName === toName) {
+            return;
+        }
+
+        blockForm();
+        output.textContent = `Calculating route from ${fromName} to ${toName}...`;
+
+        const fromCode = getCodeByCountryName(fromName, countriesData);
+        const toCode = getCodeByCountryName(toName, countriesData);
+        const { hasError, queriesCount, routes } = await calculateRoute(fromCode, toCode);
+
+        output.textContent = '';
+
+        if (hasError) {
+            addStringToOutput('Error on request. May be too far away? ┗|｀O′|┛');
+        } else if (!routes.length) {
+            addStringToOutput('No such routes ⚆_⚆');
+        } else {
+            routes.forEach((route) => {
+                const message = `${route.map((code) => countriesData[code].name.common).join(' → ')} (${
+                    route.length - 1
+                } borders)`;
+                addStringToOutput(message);
+            });
+        }
+
+        const info = document.createElement('p');
+        info.textContent = `Done in ${queriesCount} requests`;
+        output.append(info);
+
+        unblockForm();
     });
 })();
