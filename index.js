@@ -35,30 +35,9 @@ async function getBordersForAll(...codes) {
 }
 
 async function calculateRoute(fromCode, toCode) {
-    let queriesCount = 0;
-    const visitedCountries = new Set([fromCode]);
-    let routes = [[fromCode]];
-    let isDone = false;
-
-    while (!isDone && routes.length) {
-        const codes = routes.map((route) => route[route.length - 1]);
-        codes.forEach((code) => visitedCountries.add(code));
-        queriesCount += codes.length;
-
-        let bordersArray;
-
-        try {
-            // eslint-disable-next-line no-await-in-loop
-            bordersArray = await getBordersForAll(...codes);
-        } catch {
-            return {
-                hasError: true,
-                queriesCount,
-                routes: [],
-            };
-        }
-
+    function getNewRoutes(routes, bordersArray, visitedCountries) {
         const newRoutes = [];
+        let isDone = false;
 
         for (let i = 0; i < routes.length; i++) {
             const route = routes[i];
@@ -73,7 +52,33 @@ async function calculateRoute(fromCode, toCode) {
             });
         }
 
-        routes = newRoutes;
+        return [newRoutes, isDone];
+    }
+
+    let queriesCount = 0;
+    const visitedCountries = new Set([fromCode]);
+    let routes = [[fromCode]];
+    let isDone = false;
+
+    while (!isDone && routes.length) {
+        const codesToCheck = routes.map((route) => route[route.length - 1]);
+        codesToCheck.forEach((code) => visitedCountries.add(code));
+        queriesCount += codesToCheck.length;
+
+        let bordersArray;
+
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            bordersArray = await getBordersForAll(...codesToCheck);
+        } catch {
+            return {
+                hasError: true,
+                queriesCount,
+                routes: [],
+            };
+        }
+
+        [routes, isDone] = getNewRoutes(routes, bordersArray, visitedCountries);
     }
 
     routes = routes.filter((route) => route[route.length - 1] === toCode);
