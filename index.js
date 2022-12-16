@@ -39,18 +39,28 @@ class MockApi {
 //     return data.borders;
 // }
 
-function getBordersForAll(codes, getBorders) {
-    return Promise.all(codes.map(getBorders));
+async function getBordersForAll(codes, getBorders) {
+    const bordersArray = await Promise.all(codes.map(getBorders));
+    const bordersMap = {};
+
+    for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        const borders = bordersArray[i];
+        bordersMap[code] = borders;
+    }
+
+    return bordersMap;
 }
 
 async function calculateRoute(fromCode, toCode, getBorders) {
-    function getNewRoutes(routes, bordersArray, visitedCountries) {
+    function getNewRoutes(routes, bordersMap, visitedCountries) {
         const newRoutes = [];
         let isDone = false;
 
         for (let i = 0; i < routes.length; i++) {
             const route = routes[i];
-            const borders = bordersArray[i].filter((border) => !visitedCountries.has(border));
+            const code = route[route.length - 1];
+            const borders = bordersMap[code].filter((border) => !visitedCountries.has(border));
 
             if (borders.includes(toCode)) {
                 isDone = true;
@@ -70,15 +80,16 @@ async function calculateRoute(fromCode, toCode, getBorders) {
     let isDone = false;
 
     while (!isDone && routes.length) {
-        const codesToCheck = routes.map((route) => route[route.length - 1]);
+        const codes = routes.map((route) => route[route.length - 1]);
+        const codesToCheck = [...new Set(codes)];
         codesToCheck.forEach((code) => visitedCountries.add(code));
         queriesCount += codesToCheck.length;
 
-        let bordersArray;
+        let bordersMap;
 
         try {
             // eslint-disable-next-line no-await-in-loop
-            bordersArray = await getBordersForAll(codesToCheck, getBorders);
+            bordersMap = await getBordersForAll(codesToCheck, getBorders);
         } catch {
             return {
                 hasError: true,
@@ -87,7 +98,7 @@ async function calculateRoute(fromCode, toCode, getBorders) {
             };
         }
 
-        [routes, isDone] = getNewRoutes(routes, bordersArray, visitedCountries);
+        [routes, isDone] = getNewRoutes(routes, bordersMap, visitedCountries);
     }
 
     routes = routes.filter((route) => route[route.length - 1] === toCode);
@@ -181,9 +192,8 @@ function addStringToOutput(string) {
             addStringToOutput('No such routes ⚆_⚆');
         } else {
             routes.forEach((route) => {
-                const message = `${route.map((code) => countriesData[code].name.common).join(' → ')} (${
-                    route.length - 1
-                } borders)`;
+                const message = `${route.map((code) => countriesData[code].name.common).join(' → ')} (${route.length - 1
+                    } borders)`;
                 addStringToOutput(message);
             });
         }
