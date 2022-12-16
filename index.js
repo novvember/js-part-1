@@ -18,23 +18,32 @@ async function loadCountriesData() {
     }, {});
 }
 
-const form = document.getElementById('form');
-const fromCountry = document.getElementById('fromCountry');
-const toCountry = document.getElementById('toCountry');
-const countriesList = document.getElementById('countriesList');
-const submit = document.getElementById('submit');
-const output = document.getElementById('output');
+class MockApi {
+    async init(url) {
+        const countries = await getData(url);
+        this._borders = {};
 
-async function getBorders(code) {
-    const data = await getData(`https://restcountries.com/v3.1/alpha/${code}?fields=borders`);
-    return data.borders;
+        for (const { cca3, borders } of countries) {
+            this._borders[cca3] = borders;
+        }
+    }
+
+    async getBorders(code) {
+        return this._borders[code];
+    }
 }
 
-async function getBordersForAll(...codes) {
+// Функция для прямого запроса данных по каждой стране
+// async function getBorders(code) {
+//     const data = await getData(`https://restcountries.com/v3.1/alpha/${code}?fields=borders`);
+//     return data.borders;
+// }
+
+function getBordersForAll(codes, getBorders) {
     return Promise.all(codes.map(getBorders));
 }
 
-async function calculateRoute(fromCode, toCode) {
+async function calculateRoute(fromCode, toCode, getBorders) {
     function getNewRoutes(routes, bordersArray, visitedCountries) {
         const newRoutes = [];
         let isDone = false;
@@ -69,7 +78,7 @@ async function calculateRoute(fromCode, toCode) {
 
         try {
             // eslint-disable-next-line no-await-in-loop
-            bordersArray = await getBordersForAll(...codesToCheck);
+            bordersArray = await getBordersForAll(codesToCheck, getBorders);
         } catch {
             return {
                 hasError: true,
@@ -98,6 +107,13 @@ function getCodeByCountryName(name, countriesData) {
     }
     return null;
 }
+
+const form = document.getElementById('form');
+const fromCountry = document.getElementById('fromCountry');
+const toCountry = document.getElementById('toCountry');
+const countriesList = document.getElementById('countriesList');
+const submit = document.getElementById('submit');
+const output = document.getElementById('output');
 
 function blockForm() {
     fromCountry.disabled = true;
@@ -133,6 +149,11 @@ function addStringToOutput(string) {
             countriesList.appendChild(option);
         });
 
+    // Предзагружаем все данные по странам и границам
+    const mockApi = new MockApi();
+    await mockApi.init('https://restcountries.com/v3.1/all?fields=cca3&fields=borders');
+    const getBorders = mockApi.getBorders.bind(mockApi);
+
     unblockForm();
 
     form.addEventListener('submit', async (event) => {
@@ -150,7 +171,7 @@ function addStringToOutput(string) {
 
         const fromCode = getCodeByCountryName(fromName, countriesData);
         const toCode = getCodeByCountryName(toName, countriesData);
-        const { hasError, queriesCount, routes } = await calculateRoute(fromCode, toCode);
+        const { hasError, queriesCount, routes } = await calculateRoute(fromCode, toCode, getBorders);
 
         output.textContent = '';
 
