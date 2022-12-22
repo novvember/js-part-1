@@ -34,10 +34,10 @@ class MockApi {
 }
 
 // Функция для прямого запроса данных по каждой стране
-// async function getBorders(code) {
-//     const data = await getData(`https://restcountries.com/v3.1/alpha/${code}?fields=borders`);
-//     return data.borders;
-// }
+async function getBordersFromApi(code) {
+    const data = await getData(`https://restcountries.com/v3.1/alpha/${code}?fields=borders`);
+    return data.borders;
+}
 
 async function getBordersForAll(codes, getBorders) {
     const bordersArray = await Promise.all(codes.map(getBorders));
@@ -125,6 +125,7 @@ const toCountry = document.getElementById('toCountry');
 const countriesList = document.getElementById('countriesList');
 const submit = document.getElementById('submit');
 const output = document.getElementById('output');
+const requestMode = document.getElementById('request-mode');
 
 function blockForm() {
     fromCountry.disabled = true;
@@ -160,18 +161,17 @@ function addStringToOutput(string) {
             countriesList.appendChild(option);
         });
 
-    // Предзагружаем все данные по странам и границам
-    const mockApi = new MockApi();
-    await mockApi.init('https://restcountries.com/v3.1/all?fields=cca3&fields=borders');
-    const getBorders = mockApi.getBorders.bind(mockApi);
-
     unblockForm();
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
 
+        console.time('Calculation done in ');
+        console.log('Calculation started...');
+
         const fromName = fromCountry.value;
         const toName = toCountry.value;
+        const mode = requestMode.value;
 
         if (!fromName || !toName || fromName === toName) {
             return;
@@ -179,6 +179,16 @@ function addStringToOutput(string) {
 
         blockForm();
         output.textContent = `Calculating route from ${fromName} to ${toName}...`;
+
+        let getBorders;
+
+        if (mode === 'Every request goes to API') {
+            getBorders = getBordersFromApi;
+        } else {
+            const mockApi = new MockApi();
+            await mockApi.init('https://restcountries.com/v3.1/all?fields=cca3&fields=borders');
+            getBorders = mockApi.getBorders.bind(mockApi);
+        }
 
         const fromCode = getCodeByCountryName(fromName, countriesData);
         const toCode = getCodeByCountryName(toName, countriesData);
@@ -192,13 +202,16 @@ function addStringToOutput(string) {
             addStringToOutput('No such routes ⚆_⚆');
         } else {
             routes.forEach((route) => {
-                const message = `${route.map((code) => countriesData[code].name.common).join(' → ')} (${route.length - 1
-                    } borders)`;
+                const message = `${route.map((code) => countriesData[code].name.common).join(' → ')} (${
+                    route.length - 1
+                } borders)`;
                 addStringToOutput(message);
             });
         }
 
         addStringToOutput(`Done in ${queriesCount} requests`);
+
+        console.timeEnd('Calculation done in ');
 
         unblockForm();
     });
