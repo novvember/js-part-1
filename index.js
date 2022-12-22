@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 async function getData(url) {
     // https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
     const response = await fetch(url, {
@@ -53,43 +54,76 @@ async function getBordersForAll(codes, getBorders) {
 }
 
 async function calculateRoute(fromCode, toCode, getBorders) {
-    function getNewRoutes(routes, bordersMap, visitedCountries) {
+    async function step(routes, visited, queriesCount, getBorders) {
+        const codes = routes.map((route) => route[route.length - 1]);
+        const codesToCheck = [...new Set(codes)];
+        codesToCheck.forEach((code) => visited.add(code));
+        queriesCount += codesToCheck.length;
+
+        const bordersMap = await getBordersForAll(codesToCheck, getBorders);
+
         const newRoutes = [];
-        let isDone = false;
 
         for (let i = 0; i < routes.length; i++) {
             const route = routes[i];
             const code = route[route.length - 1];
-            const borders = bordersMap[code].filter((border) => !visitedCountries.has(border));
-
-            if (borders.includes(toCode)) {
-                isDone = true;
-            }
-
+            const borders = bordersMap[code].filter((border) => !visited.has(border));
             borders.forEach((border) => {
                 newRoutes.push([...route, border]);
             });
         }
 
-        return [newRoutes, isDone];
+        return [newRoutes, queriesCount];
+    }
+
+    function findCommon(routesForward, routesBackward) {
+        const codesForward = routesForward.map((route) => route[route.length - 1]);
+        const codesBackward = routesBackward.map((route) => route[route.length - 1]);
+        const common = [];
+        codesForward.forEach((code) => {
+            if (codesBackward.includes(code)) {
+                common.push(code);
+            }
+        });
+        return common;
+    }
+
+    function combineRoutes(routesForward, routesBackward) {
+        const common = findCommon(routesForward, routesBackward);
+        routesForward = routesForward.filter((route) => common.includes(route[route.length - 1]));
+        routesBackward = routesBackward.filter((route) => common.includes(route[route.length - 1]));
+
+        const routes = [];
+
+        for (const routeForward of routesForward) {
+            for (const routeBackward of routesBackward) {
+                if (routeForward[routeForward.length - 1] === routeBackward[routeBackward.length - 1]) {
+                    routes.push([...routeForward.slice(0, -1), ...routeBackward.reverse()]);
+                }
+            }
+        }
+
+        return routes;
     }
 
     let queriesCount = 0;
-    const visitedCountries = new Set([fromCode]);
-    let routes = [[fromCode]];
+
+    const visitedForward = new Set([fromCode]);
+    const visitedBackward = new Set([toCode]);
+
+    let routesForward = [[fromCode]];
+    let routesBackward = [[toCode]];
+
     let isDone = false;
+    let isForwardMode = true;
 
-    while (!isDone && routes.length) {
-        const codes = routes.map((route) => route[route.length - 1]);
-        const codesToCheck = [...new Set(codes)];
-        codesToCheck.forEach((code) => visitedCountries.add(code));
-        queriesCount += codesToCheck.length;
-
-        let bordersMap;
-
+    while (!isDone && routesForward.length && routesBackward.length) {
         try {
-            // eslint-disable-next-line no-await-in-loop
-            bordersMap = await getBordersForAll(codesToCheck, getBorders);
+            if (isForwardMode && routesForward.length) {
+                [routesForward, queriesCount] = await step(routesForward, visitedForward, queriesCount, getBorders);
+            } else if (routesBackward.length) {
+                [routesBackward, queriesCount] = await step(routesBackward, visitedBackward, queriesCount, getBorders);
+            }
         } catch {
             return {
                 hasError: true,
@@ -98,10 +132,11 @@ async function calculateRoute(fromCode, toCode, getBorders) {
             };
         }
 
-        [routes, isDone] = getNewRoutes(routes, bordersMap, visitedCountries);
+        isDone = findCommon(routesForward, routesBackward).length > 0;
+        isForwardMode = !isForwardMode;
     }
 
-    routes = routes.filter((route) => route[route.length - 1] === toCode);
+    const routes = combineRoutes(routesForward, routesBackward);
 
     return {
         hasError: false,
@@ -167,7 +202,6 @@ function addStringToOutput(string) {
         event.preventDefault();
 
         console.time('Calculation done in ');
-        console.log('Calculation started...');
 
         const fromName = fromCountry.value;
         const toName = toCountry.value;
